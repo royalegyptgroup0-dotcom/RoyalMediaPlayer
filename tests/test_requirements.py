@@ -241,5 +241,73 @@ class TestRequirements(unittest.TestCase):
         self.assertEqual(format_time(0), "00:00")
 
 
+    # -------------------------------------------------------------
+    # Req 11: Asynchronous VLC Error Recovery
+    # -------------------------------------------------------------
+    def test_11_async_vlc_error_advances_to_next_item(self):
+        self.player.add_to_playlist(self.audio_file)
+        self.player.add_to_playlist(self.video_file)
+        self.assertTrue(self.player.play_file(self.audio_file))
+
+        # Simulate VLC reporting a decode/open failure after play() accepted.
+        self.player.player.get_state = lambda: vlc.State.Error
+        self.player.update_position()
+        app.processEvents()
+
+        self.assertEqual(self.player.playlist.currentRow(), 1)
+        self.assertEqual(self.player.current_file, os.path.abspath(self.video_file))
+        self.assertEqual(self.player.play_button.text(), "Pause")
+
+    def test_12_async_errors_skip_consecutive_failed_items(self):
+        self.player.add_to_playlist(self.audio_file)
+        self.player.add_to_playlist(self.audio2_file)
+        self.player.add_to_playlist(self.video_file)
+        self.assertTrue(self.player.play_file(self.audio_file))
+
+        # Keep the recovery path deterministic: each item accepted by play()
+        # is then reported as failed by VLC on the next timer poll.
+        def simulated_play(path):
+            self.player.current_file = os.path.abspath(path)
+            self.player._ended_file = None
+            self.player.play_button.setText("Pause")
+            return True
+
+        self.player.play_file = simulated_play
+        self.player.player.get_state = lambda: vlc.State.Error
+
+        self.player.update_position()
+        self.assertEqual(self.player.playlist.currentRow(), 1)
+        self.assertEqual(self.player.current_file, os.path.abspath(self.audio2_file))
+
+        self.player.update_position()
+        self.assertEqual(self.player.playlist.currentRow(), 2)
+        self.assertEqual(self.player.current_file, os.path.abspath(self.video_file))
+
+    def test_13_async_error_on_last_item_stops_cleanly(self):
+        self.player.add_to_playlist(self.audio_file)
+        self.assertTrue(self.player.play_file(self.audio_file))
+        self.player.player.get_state = lambda: vlc.State.Error
+
+        self.player.update_position()
+        app.processEvents()
+
+        self.assertIsNone(self.player.current_file)
+        self.assertEqual(self.player.play_button.text(), "Play")
+        self.assertIn("Unable to play", self.player.video_label.text())
+
+    def test_14_async_error_recovery_guard_prevents_reentry(self):
+        self.player.add_to_playlist(self.audio_file)
+        self.assertTrue(self.player.play_file(self.audio_file))
+        original_file = self.player.current_file
+        self.player.player.get_state = lambda: vlc.State.Error
+        self.player._handling_playback_error = True
+
+        try:
+            self.player.update_position()
+            self.assertEqual(self.player.current_file, original_file)
+        finally:
+            self.player._handling_playback_error = False
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
