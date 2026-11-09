@@ -27,7 +27,7 @@ A modern, robust media player built with **PySide6 (Qt 6)** and **python-vlc (li
    - Seeking executed smoothly on slider release (`sliderReleased`).
 4. **Smart Playlist Management & Drag-and-Drop**:
    - `QEvent.Type.DragMove` handled alongside `DragEnter` and `Drop` across all widgets.
-   - Auto-advance on track completion with automatic skipping of missing/corrupt files.
+   - Auto-advance on track completion, plus recovery from asynchronous VLC decode/open errors; failed playlist entries are skipped without blocking the UI.
    - 1:1 synchronization between current playing file and selected playlist item.
 5. **Fault-Tolerant Clean Exit**:
    - Isolated cleanup steps (`timer.stop()`, `player.set_hwnd(0)`, `player.stop()`, `media.release()`, `player.release()`, `instance.release()`).
@@ -37,7 +37,7 @@ A modern, robust media player built with **PySide6 (Qt 6)** and **python-vlc (li
 ## Running the Automated Test Suites
 
 ```bash
-# Run all 22 automated tests
+# Run all 26 automated tests
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
@@ -48,7 +48,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 | Target | File Path | SHA256 Hash |
 | :--- | :--- | :--- |
 | **Original Root** | `RoyalMediaPlayer.py` | `2B2B1F5B31E6AB8DC9A2C318141562C457DD143C5DF522DF0590B54DE7568325` |
-| **Development** | `development/RoyalMediaPlayer.py` | `BC61D3954BAF661729544589388BFFEBEAB226B79A9AE8579C9804933AE930AC` |
+| **Development** | `development/RoyalMediaPlayer.py` | Recalculate after this recovery update using the release verification script. |
 
 ---
 
