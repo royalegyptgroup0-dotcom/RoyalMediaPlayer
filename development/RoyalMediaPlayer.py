@@ -185,6 +185,7 @@ class RoyalMediaPlayer(QMainWindow):
         self.current_file = None
         self.current_media = None
         self._ended_file = None
+        self._handling_playback_error = False
         self._closing = False
         self._is_audio_file = False
         self._vlc_available = False
@@ -670,6 +671,44 @@ class RoyalMediaPlayer(QMainWindow):
 
         self.video_label.show()
 
+    def _handle_async_playback_error(self):
+        """Recover from VLC errors reported after play() initially succeeded.
+
+        VLC can accept play() and fail later while opening/decoding the media.
+        The UI timer calls this method on the Qt thread, so widget access stays
+        thread-safe. The guard prevents duplicate recovery during one poll.
+        """
+        if (
+            self._closing
+            or not self._vlc_available
+            or self._handling_playback_error
+            or not self.current_file
+        ):
+            return
+
+        failed_path = self.current_file
+        self._handling_playback_error = True
+        try:
+            self._handle_playback_failure(
+                failed_path,
+                "VLC reported an asynchronous playback error",
+            )
+
+            # next() starts after the failed playlist row and continues past
+            # files that fail synchronously. A later asynchronous failure on
+            # the next item is handled by the next timer tick.
+            advanced = self.next()
+            if not advanced:
+                self.play_button.setText("Play")
+                name = os.path.basename(failed_path)
+                self.video_label.setText(f"⚠️ Unable to play:\\n{name}")
+                self.video_label.show()
+        except Exception as exc:
+            print(f"Playback recovery error: {exc}")
+            self.play_button.setText("Play")
+        finally:
+            self._handling_playback_error = False
+
     # =========================================================
     # PLAY FILE (LIFECYCLE SAFE)
     # =========================================================
@@ -922,6 +961,11 @@ class RoyalMediaPlayer(QMainWindow):
 
         try:
             state = self.player.get_state()
+
+            # VLC may report an error asynchronously after play() returned 0.
+            if state == vlc.State.Error:
+                self._handle_async_playback_error()
+                return
 
             # Handle end of playback & auto advance
             if (
