@@ -185,6 +185,7 @@ class RoyalMediaPlayer(QMainWindow):
         self.current_file = None
         self.current_media = None
         self._ended_file = None
+        self._error_handled_file = None
         self._closing = False
         self._is_audio_file = False
         self._vlc_available = False
@@ -722,6 +723,7 @@ class RoyalMediaPlayer(QMainWindow):
 
             self.current_file = absolute_path
             self._ended_file = None
+            self._error_handled_file = None
 
             # Always synchronize current playlist selection to this file
             self.sync_playlist_to_file(absolute_path)
@@ -815,6 +817,7 @@ class RoyalMediaPlayer(QMainWindow):
 
         self.play_button.setText("Play")
         self._ended_file = None
+        self._error_handled_file = None
 
         self.position_slider.blockSignals(True)
         try:
@@ -922,6 +925,25 @@ class RoyalMediaPlayer(QMainWindow):
 
         try:
             state = self.player.get_state()
+
+            # Handle asynchronous VLC decode/open failures exactly once per file.
+            # VLC may return success from play() and report the actual failure later.
+            if (
+                state == vlc.State.Error
+                and self.current_file
+                and self._error_handled_file != self.current_file
+            ):
+                failed_file = self.current_file
+                self._error_handled_file = failed_file
+                failed_name = os.path.basename(failed_file)
+                advanced = self.next()
+                if not advanced:
+                    self.stop()
+                    self.video_label.setText(
+                        f"⚠️ Unable to play:\\n{failed_name}\\nNo more playable files in the playlist."
+                    )
+                    self.video_label.show()
+                return
 
             # Handle end of playback & auto advance
             if (
