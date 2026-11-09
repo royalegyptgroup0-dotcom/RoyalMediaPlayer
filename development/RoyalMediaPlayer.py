@@ -940,7 +940,7 @@ class RoyalMediaPlayer(QMainWindow):
                 if not advanced:
                     self.stop()
                     self.video_label.setText(
-                        f"⚠️ Unable to play:\\n{failed_name}\\nNo more playable files in the playlist."
+                        f"⚠️ Unable to play:\n{failed_name}\nNo more playable files in the playlist."
                     )
                     self.video_label.show()
                 return
