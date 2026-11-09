@@ -701,7 +701,7 @@ class RoyalMediaPlayer(QMainWindow):
             if not advanced:
                 self.play_button.setText("Play")
                 name = os.path.basename(failed_path)
-                self.video_label.setText(f"⚠️ Unable to play:\\n{name}")
+                self.video_label.setText(f"⚠️ Unable to play:\n{name}")
                 self.video_label.show()
         except Exception as exc:
             print(f"Playback recovery error: {exc}")
