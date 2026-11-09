@@ -241,5 +241,49 @@ class TestRequirements(unittest.TestCase):
         self.assertEqual(format_time(0), "00:00")
 
 
+    # -------------------------------------------------------------
+    # Req 11: Asynchronous VLC Error Auto-Advance
+    # -------------------------------------------------------------
+    def test_11_async_vlc_error_advances_once(self):
+        self.player.add_to_playlist(self.audio_file)
+        self.player.add_to_playlist(self.video_file)
+        self.player.playlist.setCurrentRow(0)
+        self.assertTrue(self.player.play_file(self.audio_file))
+
+        # Simulate VLC reporting a decode/open failure after play() succeeded.
+        self.player.player.get_state = lambda: vlc.State.Error
+        self.player.update_position()
+
+        self.assertEqual(self.player.playlist.currentRow(), 1)
+        self.assertEqual(self.player.current_file, os.path.abspath(self.video_file))
+
+        # Once the next file is active, a non-error state must not skip again.
+        self.player.player.get_state = lambda: vlc.State.Playing
+        self.player.update_position()
+        self.assertEqual(self.player.playlist.currentRow(), 1)
+
+    # -------------------------------------------------------------
+    # Req 12: Consecutive Asynchronous VLC Errors
+    # -------------------------------------------------------------
+    def test_12_consecutive_async_errors_stop_cleanly(self):
+        self.player.add_to_playlist(self.audio_file)
+        self.player.add_to_playlist(self.audio2_file)
+        self.player.add_to_playlist(self.video_file)
+        self.player.playlist.setCurrentRow(0)
+        self.assertTrue(self.player.play_file(self.audio_file))
+
+        # Simulate each attempted file failing asynchronously.
+        self.player.player.get_state = lambda: vlc.State.Error
+        self.player.update_position()
+        self.assertEqual(self.player.playlist.currentRow(), 1)
+
+        self.player.update_position()
+        self.assertEqual(self.player.playlist.currentRow(), 2)
+
+        self.player.update_position()
+        self.assertEqual(self.player.play_button.text(), "Play")
+        self.assertIn("No more playable files", self.player.video_label.text())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
