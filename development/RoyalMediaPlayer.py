@@ -636,19 +636,32 @@ class RoyalMediaPlayer(QMainWindow):
 
     def _handle_playback_failure(self, attempted_path, error_msg=""):
         """Safely clear stale metadata and stop playback when a file fails to play."""
-        try:
-            if self.player:
+        # Detach the media from VLC before releasing its native object.
+        # Keep the reference if detaching fails: releasing an object that the
+        # player may still own can cause a native use-after-free crash.
+        detached = self.player is None
+        if self.player is not None:
+            try:
                 self.player.stop()
-                self.player.set_media(None)
-        except Exception:
-            pass
+            except Exception:
+                # A failed stop must not prevent an independent detach attempt.
+                pass
 
-        if self.current_media:
+            try:
+                self.player.set_media(None)
+                detached = True
+            except Exception:
+                detached = False
+
+        if self.current_media is not None and detached:
             try:
                 self.current_media.release()
             except Exception:
+                # Retain the reference so shutdown or a later transition can
+                # retry cleanup rather than losing the native handle.
                 pass
-            self.current_media = None
+            else:
+                self.current_media = None
 
         self.current_file = None
         self._ended_file = None
