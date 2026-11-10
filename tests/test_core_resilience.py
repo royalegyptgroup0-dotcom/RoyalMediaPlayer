@@ -100,6 +100,73 @@ class TestCoreResilience(unittest.TestCase):
         self.assertEqual(self.window.play_button.text(), "Play")
         self.assertIn("Unable to play", self.window.video_label.text())
 
+    def test_failure_cleanup_continues_when_stop_raises(self):
+        class FakeMedia:
+            released = False
+
+            def release(self):
+                self.released = True
+
+        class FakePlayer:
+            def stop(self):
+                raise RuntimeError("simulated stop failure")
+
+            def set_media(self, media):
+                self.detached = media is None
+
+            def release(self):
+                pass
+
+        media = FakeMedia()
+        self.window.current_media = media
+        self.window.player = FakePlayer()
+
+        self.window._handle_playback_failure("failed.mp4", "simulated failure")
+
+        self.assertTrue(self.window.player.detached)
+        self.assertTrue(media.released)
+        self.assertIsNone(self.window.current_media)
+
+    def test_media_is_retained_until_player_release_if_detach_fails(self):
+        class FakePlayer:
+            released = False
+
+            def stop(self):
+                pass
+
+            def set_media(self, media):
+                if media is None:
+                    raise RuntimeError("simulated detach failure")
+
+            def release(self):
+                self.released = True
+
+        class FakeMedia:
+            released = False
+
+            def release(self):
+                if not player.released:
+                    raise AssertionError("media released while player still owns it")
+                self.released = True
+
+        player = FakePlayer()
+        media = FakeMedia()
+        self.window.player = player
+        self.window.current_media = media
+
+        self.window._handle_playback_failure("failed.mp4", "simulated failure")
+
+        self.assertIs(self.window.current_media, media)
+        self.assertFalse(media.released)
+
+        # Shutdown releases the player first, then safely retries media release.
+        self.window.close()
+        app.processEvents()
+        self.assertTrue(player.released)
+        self.assertTrue(media.released)
+        self.assertIsNone(self.window.current_media)
+        self.window = None
+
     def test_new_media_is_released_when_backend_rejects_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             media_path = Path(temporary) / "rejected.mp4"
