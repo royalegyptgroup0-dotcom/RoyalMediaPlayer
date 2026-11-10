@@ -726,18 +726,25 @@ class RoyalMediaPlayer(QMainWindow):
         ext = os.path.splitext(absolute_path)[1].lower()
         self._is_audio_file = ext in self.AUDIO_EXTENSIONS
 
+        new_media = None
         try:
             new_media = self.instance.media_new(absolute_path)
             if new_media is None:
                 self._handle_playback_failure(file_path, "Failed to create VLC Media")
                 return False
 
-            # Attach new media to player first
+            # Attach new media to player first. Until set_media succeeds,
+            # this method still owns new_media and must release it on failure.
             self.player.set_media(new_media)
 
-            # Safely release previous media now that the player has switched
+            # Transfer ownership only after the player accepted the media.
+            # This prevents leaking a newly-created media object if set_media
+            # raises before the current_media reference is updated.
             old_media = self.current_media
             self.current_media = new_media
+            new_media = None
+
+            # Safely release previous media now that the player has switched.
             if old_media is not None:
                 try:
                     old_media.release()
@@ -787,6 +794,13 @@ class RoyalMediaPlayer(QMainWindow):
         except Exception as exc:
             print(f"Playback error: {exc}")
             self._handle_playback_failure(file_path, str(exc))
+            # If the backend rejected the media before ownership transfer,
+            # detach it first (the failure handler does this) and release it.
+            if new_media is not None:
+                try:
+                    new_media.release()
+                except Exception:
+                    pass
             return False
 
     # =========================================================
