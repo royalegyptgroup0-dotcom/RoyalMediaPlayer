@@ -15,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEV_DIR = BASE_DIR / "development"
 sys.path.insert(0, str(DEV_DIR))
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 import RoyalMediaPlayer as player_module
 from RoyalMediaPlayer import RoyalMediaPlayer, format_time
@@ -82,14 +83,14 @@ class TestCoreResilience(unittest.TestCase):
             self.assertFalse(self.window.add_to_playlist(str(media.parent / "." / media.name)))
             self.assertEqual(self.window.playlist.count(), 1)
             self.assertEqual(
-                os.path.normcase(self.window.playlist.item(0).data(256)),
+                os.path.normcase(self.window.playlist.item(0).data(Qt.ItemDataRole.UserRole)),
                 os.path.normcase(os.path.abspath(str(media))),
             )
 
     def test_unavailable_backend_fails_gracefully(self):
         self.assertFalse(self.window._vlc_available)
         self.assertFalse(self.window.play_button.isEnabled())
-        self.assertFalse(self.window.play_button.text() == "Pause")
+        self.assertEqual(self.window.play_button.text(), "Play")
 
         result = self.window.play_file("missing-file.mp4")
 
