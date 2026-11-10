@@ -1107,42 +1107,60 @@ class RoyalMediaPlayer(QMainWindow):
         except Exception as exc:
             print(f"Error stopping timer on shutdown: {exc}")
 
-        # 2. Stop player playback and detach HWND
+        # 2. Stop playback independently from the remaining cleanup steps.
         try:
             if getattr(self, "player", None):
                 self.player.stop()
-                if sys.platform.startswith("win"):
-                    try:
-                        self.player.set_hwnd(0)
-                    except Exception:
-                        pass
         except Exception as exc:
             print(f"Error stopping player on shutdown: {exc}")
 
-        # 3. Unset media from player
+        # 3. Detach the native video window independently.
+        try:
+            if getattr(self, "player", None) and sys.platform.startswith("win"):
+                self.player.set_hwnd(0)
+        except Exception as exc:
+            print(f"Error detaching video window on shutdown: {exc}")
+
+        # 4. Detach media and remember whether releasing it is safe.
+        media_detached = self.player is None
         try:
             if getattr(self, "player", None):
                 self.player.set_media(None)
+                media_detached = True
         except Exception as exc:
+            media_detached = False
             print(f"Error unsetting media on shutdown: {exc}")
 
-        # 4. Release current media
-        try:
-            if getattr(self, "current_media", None):
+        # 5. Release media only after detachment. If detachment failed, retain
+        # the reference until the player itself has been released.
+        if getattr(self, "current_media", None) is not None and media_detached:
+            try:
                 self.current_media.release()
+            except Exception as exc:
+                print(f"Error releasing media on shutdown: {exc}")
+            else:
                 self.current_media = None
-        except Exception as exc:
-            print(f"Error releasing media on shutdown: {exc}")
 
-        # 5. Release player
+        # 6. Release player. A successful player release also guarantees it no
+        # longer owns the media, so it is safe to retry any remaining release.
+        player_released = self.player is None
         try:
             if getattr(self, "player", None):
                 self.player.release()
                 self.player = None
+                player_released = True
         except Exception as exc:
             print(f"Error releasing player on shutdown: {exc}")
 
-        # 6. Release instance
+        if self.current_media is not None and player_released:
+            try:
+                self.current_media.release()
+            except Exception as exc:
+                print(f"Error releasing detached media on shutdown: {exc}")
+            else:
+                self.current_media = None
+
+        # 7. Release instance after player cleanup attempts.
         try:
             if getattr(self, "instance", None):
                 self.instance.release()
