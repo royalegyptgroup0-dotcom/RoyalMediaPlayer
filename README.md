@@ -37,9 +37,21 @@ A modern, robust media player built with **PySide6 (Qt 6)** and **python-vlc (li
 ## Running the Automated Test Suites
 
 ```bash
-# Run all 26 automated tests
+# Run all 31 automated tests
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
+
+---
+
+### VLC-independent core regression tests
+
+The focused suite can run without a VLC installation or sample media files:
+
+```bash
+python -m unittest discover -s tests -p "test_core_resilience.py" -v
+```
+
+GitHub Actions runs this suite on Windows and Ubuntu with Python 3.14 and PySide6 6.11.2. The VLC-dependent integration suites still require a working VLC installation and the repository's sample media.
 
 ---
 
