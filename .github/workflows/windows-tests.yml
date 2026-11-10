@@ -1,0 +1,45 @@
+name: Windows tests
+
+on:
+  push:
+    branches:
+      - main
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install VLC
+        shell: pwsh
+        run: choco install vlc --no-progress -y
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run complete test suite
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          VLC_PLUGIN_PATH: C:\Program Files\VideoLAN\VLC\plugins
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not (Test-Path "C:\Program Files\VideoLAN\VLC\libvlc.dll")) {
+            throw "VLC installation was not found."
+          }
+          python -m unittest discover -s tests -p "test_*.py" -v
