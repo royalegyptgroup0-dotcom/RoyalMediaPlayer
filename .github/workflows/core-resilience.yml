@@ -1,0 +1,35 @@
+name: Core resilience tests
+
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  core-resilience:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Qt runtime
+        run: python -m pip install --upgrade pip PySide6==6.11.2
+
+      - name: Run VLC-independent regression tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s tests -p test_core_resilience.py -v
