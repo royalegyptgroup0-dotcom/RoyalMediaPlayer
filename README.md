@@ -37,7 +37,7 @@ A modern, robust media player built with **PySide6 (Qt 6)** and **python-vlc (li
 ## Running the Automated Test Suites
 
 ```bash
-# Run all 31 automated tests
+# Run all 33 automated tests
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
