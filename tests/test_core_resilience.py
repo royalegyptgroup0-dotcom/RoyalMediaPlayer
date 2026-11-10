@@ -118,8 +118,14 @@ class TestCoreResilience(unittest.TestCase):
                 def media_new(self, _path):
                     return self.media
 
+                def release(self):
+                    pass
+
             class RejectingPlayer:
                 def stop(self):
+                    pass
+
+                def release(self):
                     pass
 
                 def set_media(self, media):
