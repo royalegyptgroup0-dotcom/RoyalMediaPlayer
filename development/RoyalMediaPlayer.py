@@ -636,19 +636,32 @@ class RoyalMediaPlayer(QMainWindow):
 
     def _handle_playback_failure(self, attempted_path, error_msg=""):
         """Safely clear stale metadata and stop playback when a file fails to play."""
-        try:
-            if self.player:
+        # Detach the media from VLC before releasing its native object.
+        # Keep the reference if detaching fails: releasing an object that the
+        # player may still own can cause a native use-after-free crash.
+        detached = self.player is None
+        if self.player is not None:
+            try:
                 self.player.stop()
-                self.player.set_media(None)
-        except Exception:
-            pass
+            except Exception:
+                # A failed stop must not prevent an independent detach attempt.
+                pass
 
-        if self.current_media:
+            try:
+                self.player.set_media(None)
+                detached = True
+            except Exception:
+                detached = False
+
+        if self.current_media is not None and detached:
             try:
                 self.current_media.release()
             except Exception:
+                # Retain the reference so shutdown or a later transition can
+                # retry cleanup rather than losing the native handle.
                 pass
-            self.current_media = None
+            else:
+                self.current_media = None
 
         self.current_file = None
         self._ended_file = None
@@ -726,18 +739,25 @@ class RoyalMediaPlayer(QMainWindow):
         ext = os.path.splitext(absolute_path)[1].lower()
         self._is_audio_file = ext in self.AUDIO_EXTENSIONS
 
+        new_media = None
         try:
             new_media = self.instance.media_new(absolute_path)
             if new_media is None:
                 self._handle_playback_failure(file_path, "Failed to create VLC Media")
                 return False
 
-            # Attach new media to player first
+            # Attach new media to player first. Until set_media succeeds,
+            # this method still owns new_media and must release it on failure.
             self.player.set_media(new_media)
 
-            # Safely release previous media now that the player has switched
+            # Transfer ownership only after the player accepted the media.
+            # This prevents leaking a newly-created media object if set_media
+            # raises before the current_media reference is updated.
             old_media = self.current_media
             self.current_media = new_media
+            new_media = None
+
+            # Safely release previous media now that the player has switched.
             if old_media is not None:
                 try:
                     old_media.release()
@@ -787,6 +807,13 @@ class RoyalMediaPlayer(QMainWindow):
         except Exception as exc:
             print(f"Playback error: {exc}")
             self._handle_playback_failure(file_path, str(exc))
+            # If the backend rejected the media before ownership transfer,
+            # detach it first (the failure handler does this) and release it.
+            if new_media is not None:
+                try:
+                    new_media.release()
+                except Exception:
+                    pass
             return False
 
     # =========================================================
@@ -1080,42 +1107,60 @@ class RoyalMediaPlayer(QMainWindow):
         except Exception as exc:
             print(f"Error stopping timer on shutdown: {exc}")
 
-        # 2. Stop player playback and detach HWND
+        # 2. Stop playback independently from the remaining cleanup steps.
         try:
             if getattr(self, "player", None):
                 self.player.stop()
-                if sys.platform.startswith("win"):
-                    try:
-                        self.player.set_hwnd(0)
-                    except Exception:
-                        pass
         except Exception as exc:
             print(f"Error stopping player on shutdown: {exc}")
 
-        # 3. Unset media from player
+        # 3. Detach the native video window independently.
+        try:
+            if getattr(self, "player", None) and sys.platform.startswith("win"):
+                self.player.set_hwnd(0)
+        except Exception as exc:
+            print(f"Error detaching video window on shutdown: {exc}")
+
+        # 4. Detach media and remember whether releasing it is safe.
+        media_detached = self.player is None
         try:
             if getattr(self, "player", None):
                 self.player.set_media(None)
+                media_detached = True
         except Exception as exc:
+            media_detached = False
             print(f"Error unsetting media on shutdown: {exc}")
 
-        # 4. Release current media
-        try:
-            if getattr(self, "current_media", None):
+        # 5. Release media only after detachment. If detachment failed, retain
+        # the reference until the player itself has been released.
+        if getattr(self, "current_media", None) is not None and media_detached:
+            try:
                 self.current_media.release()
+            except Exception as exc:
+                print(f"Error releasing media on shutdown: {exc}")
+            else:
                 self.current_media = None
-        except Exception as exc:
-            print(f"Error releasing media on shutdown: {exc}")
 
-        # 5. Release player
+        # 6. Release player. A successful player release also guarantees it no
+        # longer owns the media, so it is safe to retry any remaining release.
+        player_released = self.player is None
         try:
             if getattr(self, "player", None):
                 self.player.release()
                 self.player = None
+                player_released = True
         except Exception as exc:
             print(f"Error releasing player on shutdown: {exc}")
 
-        # 6. Release instance
+        if self.current_media is not None and player_released:
+            try:
+                self.current_media.release()
+            except Exception as exc:
+                print(f"Error releasing detached media on shutdown: {exc}")
+            else:
+                self.current_media = None
+
+        # 7. Release instance after player cleanup attempts.
         try:
             if getattr(self, "instance", None):
                 self.instance.release()
